@@ -22,6 +22,15 @@ from openai import OpenAI
 
 _client: Optional[OpenAI] = None
 
+# 使用するモデルは .env で自由に変更できます(未設定なら gpt-5.6)。
+# 例: OPENAI_MODEL=gpt-4o
+_MODEL = os.getenv("OPENAI_MODEL", "gpt-5.6")
+
+# reasoning_effort は GPT-5 系のみ対応のパラメータです。
+# GPT-5 以外のモデル(gpt-4o など)を使う場合は .env で OPENAI_REASONING_EFFORT= を
+# 空にしておくと、このパラメータを送信しません。
+_REASONING_EFFORT = os.getenv("OPENAI_REASONING_EFFORT", "none")
+
 _SYSTEM_PROMPT = (
     "あなたは早押しクイズの回答者です。"
     "問題文はまだ最後まで読み終わっていない途中の状態で渡されます。"
@@ -46,12 +55,16 @@ def predict_answer(partial_question: str) -> Optional[str]:
     Returns:
         その時点で最も可能性が高いと思う解答(常に何か返します)。
     """
+    extra_params = {}
+    if _REASONING_EFFORT:
+        extra_params["reasoning_effort"] = _REASONING_EFFORT
+
     response = _get_client().chat.completions.create(
-        model="gpt-5.6",
-        reasoning_effort="none",
+        model=_MODEL,
         messages=[
             {"role": "system", "content": _SYSTEM_PROMPT},
             {"role": "user", "content": partial_question},
         ],
+        **extra_params,
     )
     return (response.choices[0].message.content or "").strip()

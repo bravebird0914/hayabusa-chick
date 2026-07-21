@@ -138,6 +138,18 @@ run.bat data\your_questions.csv
 - APIキーは `.env` に設定し、`os.getenv("YOUR_API_KEY")` のように読み込んでください。
 - `predict_answer()`は問題文の1トークンごとに毎回呼び出され、返した内容がそのまま「入力に対する回答」として表示されます。正解かどうかの自動判定・答え合わせは行いません。表示された回答を見て、実行している人が自分で判断してください。
 
+### モデルの変更について
+
+`agent.py` はOpenAIを使った**サンプル実装**で、デフォルトは `gpt-5.6` です。モデルはコードを書き換えなくても `.env` で変更できます。
+
+```
+OPENAI_MODEL=gpt-4o
+# GPT-5系以外のモデルを使う場合は、次を「値なし」にして reasoning_effort を無効化してください
+OPENAI_REASONING_EFFORT=
+```
+
+OpenAI以外のプロバイダ(Anthropic、Gemini、ローカルLLMなど)を使いたい場合は、`agent.py` の `predict_answer()` を各プロバイダのSDKで実装し直してください(このファイルは自由に書き換える前提です)。
+
 ## CSVフォーマット
 
 ```csv
