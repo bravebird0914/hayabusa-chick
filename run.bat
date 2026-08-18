@@ -22,7 +22,7 @@ if not exist "%SCRIPT_DIR%.venv\Scripts\activate.bat" (
 
 call "%SCRIPT_DIR%.venv\Scripts\activate.bat"
 
-python -c "import openai, dotenv, tiktoken" >nul 2>&1
+python -c "import openai, anthropic, google.genai, dotenv, tiktoken" >nul 2>&1
 if errorlevel 1 (
     echo [初回セットアップ] 必要なライブラリをインストールします...
     pip install -q -r requirements.txt

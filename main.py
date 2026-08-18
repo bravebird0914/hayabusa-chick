@@ -9,6 +9,8 @@ import sys
 
 from dotenv import load_dotenv
 
+load_dotenv()
+
 from engine import run
 
 
@@ -17,7 +19,6 @@ def main() -> None:
         print("使い方: python main.py <CSVファイルパス>")
         sys.exit(1)
 
-    load_dotenv()
     run(sys.argv[1])
 
 

@@ -64,15 +64,31 @@ copy .env.example .env
 
 実行後、ターミナルの行頭に `(.venv)` と表示されていれば仮想環境が有効になっています。
 
-### 3. APIキーを設定する
+### 3. 使うLLMとAPIキーを設定する
 
-作成された `.env` ファイルをテキストエディタ(メモ帳・VS Codeなど何でもOK)で開き、使いたいLLMプロバイダの行の先頭の `#` を消してAPIキーを貼り付けてください。
+作成された `.env` ファイルをテキストエディタ(メモ帳・VS Codeなど何でもOK)で開き、次の2つだけ設定してください。
+
+**1. 使うプロバイダを1行で指定する**
+
+```
+LLM_PROVIDER=openai
+```
+
+`openai` / `anthropic` / `gemini` のいずれかを書いてください(`gpt` / `claude` / `google` でも同じ意味です)。
+
+**2. そのプロバイダのAPIキー行の先頭の `#` を消して、キーを貼り付ける**
 
 ```
 OPENAI_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxx
 ```
 
-どのAPIを使えばいいか分からない場合は、まず [OpenAIのAPIキー発行ページ](https://platform.openai.com/api-keys) で1つ取得するのが手軽です。
+| プロバイダ | `.env` に書く値 | APIキーの変数名 | キーの取得先 |
+| --- | --- | --- | --- |
+| OpenAI (GPT) | `openai` または `gpt` | `OPENAI_API_KEY` | [OpenAI](https://platform.openai.com/api-keys) |
+| Anthropic (Claude) | `anthropic` または `claude` | `ANTHROPIC_API_KEY` | [Anthropic](https://console.anthropic.com/settings/keys) |
+| Google (Gemini) | `gemini` または `google` | `GOOGLE_API_KEY` | [Google AI Studio](https://aistudio.google.com/apikey) |
+
+切り替えたいときは、`LLM_PROVIDER` の値を変えて、対応するAPIキーを入れてから、もう一度 `./run.sh` を実行するだけです。コードを書き換える必要はありません。
 
 ### 4. 動作確認
 
@@ -88,7 +104,7 @@ OPENAI_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxx
 run.bat
 ```
 
-問題文が少しずつ画面に表示されれば、セットアップは成功です。`agent.py` はまだ何も実装していない状態なので、この時点では回答欄が空のままで問題ありません。
+問題文が少しずつ画面に表示され、各トークンごとに回答が出ればセットアップは成功です。
 
 > `run.sh` / `run.bat` は、セットアップ(仮想環境の作成・ライブラリのインストール・`.env`の作成)が終わっていない場合は自動で行い、終わっていれば実行だけを行う、実行用のショートカットスクリプトです。中身は `python main.py data/sample_questions.csv` を実行しているだけです。
 >
@@ -134,21 +150,44 @@ run.bat data\your_questions.csv
 
 ## API
 
-- 使うLLM API(OpenAI、Anthropic、Gemini、ローカルLLMなど)は自由に選んでください。プロバイダは特に指定しません。
+- サンプル実装は OpenAI / Anthropic / Gemini に対応しています。`.env` の `LLM_PROVIDER` を書き換えるだけで切り替えられます。
 - APIキーは `.env` に設定し、`os.getenv("YOUR_API_KEY")` のように読み込んでください。
 - `predict_answer()`は問題文の1トークンごとに毎回呼び出され、返した内容がそのまま「入力に対する回答」として表示されます。正解かどうかの自動判定・答え合わせは行いません。表示された回答を見て、実行している人が自分で判断してください。
 
-### モデルの変更について
+### プロバイダの切り替え
 
-`agent.py` はOpenAIを使った**サンプル実装**で、デフォルトは `gpt-5.6` です。モデルはコードを書き換えなくても `.env` で変更できます。
+`.env` のこの1行だけを変えます。
 
 ```
-OPENAI_MODEL=gpt-4o
-# GPT-5系以外のモデルを使う場合は、次を「値なし」にして reasoning_effort を無効化してください
+LLM_PROVIDER=openai
+```
+
+```
+LLM_PROVIDER=anthropic
+```
+
+```
+LLM_PROVIDER=gemini
+```
+
+### モデルの変更
+
+モデル名はコードを書き換えなくても `.env` で変更できます。空なら各プロバイダのデフォルトを使います。
+
+| プロバイダ | デフォルトモデル | 変更例 |
+| --- | --- | --- |
+| openai | `gpt-5.6` | `LLM_MODEL=gpt-4o` |
+| anthropic | `claude-sonnet-5` | `LLM_MODEL=claude-haiku-4-5` |
+| gemini | `gemini-3.6-flash` | `LLM_MODEL=gemini-2.5-pro` |
+
+```
+LLM_PROVIDER=openai
+LLM_MODEL=gpt-4o
+# GPT-5系以外のモデルを使う場合は、次を空にして reasoning_effort を無効化してください
 OPENAI_REASONING_EFFORT=
 ```
 
-OpenAI以外のプロバイダ(Anthropic、Gemini、ローカルLLMなど)を使いたい場合は、`agent.py` の `predict_answer()` を各プロバイダのSDKで実装し直してください(このファイルは自由に書き換える前提です)。
+ローカルLLMなど、上記3つ以外を使いたい場合は `agent.py` の `predict_answer()` を書き換えてください。
 
 ## CSVフォーマット
 

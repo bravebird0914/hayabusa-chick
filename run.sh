@@ -22,7 +22,7 @@ fi
 
 source "$SCRIPT_DIR/.venv/bin/activate"
 
-if ! python -c "import openai, dotenv, tiktoken" >/dev/null 2>&1; then
+if ! python -c "import openai, anthropic, google.genai, dotenv, tiktoken" >/dev/null 2>&1; then
     echo "🔧 初回セットアップ: 必要なライブラリをインストールします..."
     pip install -q -r requirements.txt
 fi
