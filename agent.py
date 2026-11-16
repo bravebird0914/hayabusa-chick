@@ -1,18 +1,20 @@
 """
-hayabusa-chick: 早押しクイズエージェント
+hayabusa-chick: 早押しクイズエージェント（叩き台）
 
 改造するのはこのファイルだけです。
 
 predict_answer() は、問題文が少しずつ読み上げられるたびに呼び出されます。
-まだ問題文が最後まで読まれていなくても、確信が持てなくても構わないので、
-その時点で最も可能性が高いと思う解答を常に1つ返してください。
+押すときは、戻り値の先頭を push! にして、続けて解答を返してください。
 
-使うLLMは .env の LLM_PROVIDER で切り替えます(openai / anthropic / gemini)。
+    return "push! ナポレオン"
+
+push! が付いていない戻り値は「まだ押していない考え」として表示されるだけで、
+押したことにはなりません。いつ push! を出すかは、このファイルを書く人に任されています。
+
+この叩き台は「同じ解答が PUSH_STREAK 回（既定は 3 回）続いたら押す」です。
+使う LLM は .env の LLM_PROVIDER で切り替えます（openai / anthropic / gemini）。
 モデル名は LLM_MODEL で変更できます。未設定なら各プロバイダのデフォルトを使います。
-APIキーは .env に設定し、os.getenv("...") で読み込みます。
-
-回答が正解かどうかの自動判定は行いません。表示された回答が正しいかどうかは、
-実行している人が自分の目で確認してください。
+API の接続先を変えたいときは OPENAI_BASE_URL / ANTHROPIC_BASE_URL / GEMINI_BASE_URL を使います。
 """
 
 import os
@@ -24,9 +26,9 @@ _SYSTEM_PROMPT = (
     "確信が持てなくてもかまわないので、現時点で最も可能性が高いと思う解答を"
     "単語・フレーズだけで1つ、必ず答えてください。"
     "「わかりません」「PASS」のような回答は禁止です。説明や前置きも不要です。"
+    "push! という文字列は出力しないでください。"
 )
 
-# LLM_PROVIDER の別名。どれを書いても同じプロバイダになります。
 _PROVIDER_ALIASES = {
     "openai": "openai",
     "gpt": "openai",
@@ -36,7 +38,6 @@ _PROVIDER_ALIASES = {
     "google": "gemini",
 }
 
-# プロバイダごとのデフォルトモデル。LLM_MODEL を空にするとこれを使います。
 _DEFAULT_MODELS = {
     "openai": "gpt-5.6",
     "anthropic": "claude-sonnet-5",
@@ -46,6 +47,10 @@ _DEFAULT_MODELS = {
 _openai_client = None
 _anthropic_client = None
 _gemini_client = None
+
+_prev_partial: Optional[str] = None
+_streak_answer: Optional[str] = None
+_streak = 0
 
 
 def _provider() -> str:
@@ -63,6 +68,15 @@ def _model(provider: str) -> str:
     return (os.getenv("LLM_MODEL") or "").strip() or _DEFAULT_MODELS[provider]
 
 
+def _streak_needed() -> int:
+    raw = (os.getenv("PUSH_STREAK") or "3").strip()
+    try:
+        n = int(raw)
+    except ValueError:
+        n = 3
+    return max(1, n)
+
+
 def _call_openai(partial_question: str) -> str:
     global _openai_client
     from openai import OpenAI
@@ -71,7 +85,11 @@ def _call_openai(partial_question: str) -> str:
         api_key = os.getenv("OPENAI_API_KEY")
         if not api_key:
             raise ValueError("OPENAI_API_KEY が .env に設定されていません。")
-        _openai_client = OpenAI(api_key=api_key)
+        kwargs = {"api_key": api_key}
+        base_url = (os.getenv("OPENAI_BASE_URL") or "").strip()
+        if base_url:
+            kwargs["base_url"] = base_url
+        _openai_client = OpenAI(**kwargs)
 
     extra_params = {}
     reasoning_effort = os.getenv("OPENAI_REASONING_EFFORT", "none")
@@ -97,7 +115,11 @@ def _call_anthropic(partial_question: str) -> str:
         api_key = os.getenv("ANTHROPIC_API_KEY")
         if not api_key:
             raise ValueError("ANTHROPIC_API_KEY が .env に設定されていません。")
-        _anthropic_client = Anthropic(api_key=api_key)
+        kwargs = {"api_key": api_key}
+        base_url = (os.getenv("ANTHROPIC_BASE_URL") or "").strip()
+        if base_url:
+            kwargs["base_url"] = base_url
+        _anthropic_client = Anthropic(**kwargs)
 
     response = _anthropic_client.messages.create(
         model=_model("anthropic"),
@@ -117,7 +139,13 @@ def _call_gemini(partial_question: str) -> str:
         api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
         if not api_key:
             raise ValueError("GOOGLE_API_KEY が .env に設定されていません。")
-        _gemini_client = genai.Client(api_key=api_key)
+        kwargs = {"api_key": api_key}
+        base_url = (os.getenv("GEMINI_BASE_URL") or os.getenv("GOOGLE_API_BASE") or "").strip()
+        if base_url:
+            from google.genai import types
+
+            kwargs["http_options"] = types.HttpOptions(base_url=base_url)
+        _gemini_client = genai.Client(**kwargs)
 
     response = _gemini_client.models.generate_content(
         model=_model("gemini"),
@@ -129,17 +157,42 @@ def _call_gemini(partial_question: str) -> str:
     return (response.text or "").strip()
 
 
-def predict_answer(partial_question: str) -> Optional[str]:
+def _guess(partial_question: str) -> str:
+    provider = _provider()
+    if provider == "openai":
+        answer = _call_openai(partial_question)
+    elif provider == "anthropic":
+        answer = _call_anthropic(partial_question)
+    else:
+        answer = _call_gemini(partial_question)
+    # モデルが規約語を返しても、押し判断はここ（叩き台）が行う。
+    if answer.startswith("push!"):
+        answer = answer[len("push!") :].strip()
+    return answer
+
+
+def predict_answer(partial_question: str) -> str:
     """
     Args:
         partial_question: これまでに読み上げられた問題文の断片。
 
     Returns:
-        その時点で最も可能性が高いと思う解答(常に何か返します)。
+        押すときは ``push! 解答``。押さないときは、その時点の考え。
     """
-    provider = _provider()
-    if provider == "openai":
-        return _call_openai(partial_question)
-    if provider == "anthropic":
-        return _call_anthropic(partial_question)
-    return _call_gemini(partial_question)
+    global _prev_partial, _streak_answer, _streak
+
+    if _prev_partial is not None and not partial_question.startswith(_prev_partial):
+        _streak_answer = None
+        _streak = 0
+    _prev_partial = partial_question
+
+    answer = _guess(partial_question)
+    if answer and answer == _streak_answer:
+        _streak += 1
+    else:
+        _streak_answer = answer
+        _streak = 1 if answer else 0
+
+    if answer and _streak >= _streak_needed():
+        return f"push! {answer}"
+    return answer
